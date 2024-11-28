@@ -10,8 +10,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 )
 
 func main() {
@@ -55,24 +58,27 @@ func startServer(ctx context.Context, wg *sync.WaitGroup, service services.Servi
 		return fmt.Errorf("No entry in port map for %s", service)
 	}
 
-	cert, err := service.Cert()
+	cw, err := newCertWatcher(service)
 	if err != nil {
-		return fmt.Errorf("failed to load service cert: %v", err)
+		return err
 	}
 
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
 		Handler: setupServiceMux(service),
 		TLSConfig: &tls.Config{
-			Certificates: []tls.Certificate{cert},
-			ClientCAs:    rootCaPool,
-			ClientAuth:   tls.RequireAndVerifyClientCert,
+			GetCertificate: cw.getCert,
+			ClientCAs:      rootCaPool,
+			ClientAuth:     tls.RequireAndVerifyClientCert,
 		},
 	}
 
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
+
+		go cw.start()
+		defer cw.watcher.Close()
 
 		go func() {
 			<-ctx.Done()
@@ -141,4 +147,58 @@ func sigWait() {
 	signal.Notify(c, os.Interrupt)
 	<-c
 	signal.Stop(c)
+}
+
+type certWatcher struct {
+	service  services.Service
+	watcher  *fsnotify.Watcher
+	certLock sync.RWMutex
+	cert     tls.Certificate
+}
+
+func newCertWatcher(service services.Service) (*certWatcher, error) {
+	cert, err := service.Cert()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load service cert: %v", err)
+	}
+
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return nil, err
+	}
+	if err := watcher.Add(service.KeyPath()); err != nil {
+		return nil, err
+	}
+
+	return &certWatcher{
+		service: service,
+		watcher: watcher,
+		cert:    cert,
+	}, nil
+}
+
+func (cw *certWatcher) start() {
+	var err error
+	for event := range cw.watcher.Events {
+		time.Sleep(100 * time.Millisecond)
+		fmt.Println(cw.service, event.Name)
+		if !strings.HasSuffix(event.Name, cw.service.KeyPath()) {
+			continue
+		}
+		func() {
+			cw.certLock.Lock()
+			defer cw.certLock.Unlock()
+			fmt.Println("Reloading Cert/Key for", cw.service)
+			if cw.cert, err = cw.service.Cert(); err != nil {
+				fmt.Println(cw.service, err)
+			}
+		}()
+	}
+}
+
+func (cw *certWatcher) getCert(chi *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	cw.certLock.RLock()
+	defer cw.certLock.RUnlock()
+	cert := cw.cert
+	return &cert, nil
 }

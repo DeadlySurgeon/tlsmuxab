@@ -32,3 +32,6 @@ func (s Service) Cert() (tls.Certificate, error) {
 		"certs/servers/"+sn+"-key.pem",
 	)
 }
+
+func (s Service) CertPath() string { return "certs/servers/" + string(s) + "-cert.pem" }
+func (s Service) KeyPath() string  { return "certs/servers/" + string(s) + "-key.pem" }

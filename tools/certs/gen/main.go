@@ -43,8 +43,8 @@ func generateClientCerts(parent *x509.Certificate, key crypto.PrivateKey) {
 		clientCert := createCertTemplate(pkix.Name{CommonName: name}, false, time.Hour*24)
 		clientCertBytes := createCert(clientCert, parent, &clientKey.PublicKey, key)
 
-		writePEM("certs/clients/"+name+"-cert.pem", "CERTIFICATE", clientCertBytes)
 		writeKey("certs/clients/"+name+"-key.pem", clientKey)
+		writePEM("certs/clients/"+name+"-cert.pem", "CERTIFICATE", clientCertBytes)
 	}
 }
 
@@ -65,8 +65,8 @@ func generateServerCerts(parent *x509.Certificate, key crypto.PrivateKey) {
 		serverCert := createCertTemplate(pkix.Name{CommonName: name}, false, time.Hour*24)
 		serverCertBytes := createCert(serverCert, parent, &serverKey.PublicKey, key)
 
-		writePEM("certs/servers/"+name+"-cert.pem", "CERTIFICATE", serverCertBytes)
 		writeKey("certs/servers/"+name+"-key.pem", serverKey)
+		writePEM("certs/servers/"+name+"-cert.pem", "CERTIFICATE", serverCertBytes)
 	}
 }
 
