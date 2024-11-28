@@ -2,6 +2,14 @@
 
 Cert Experiment
 
+## Generate Certificates for testing
+
+From base directory:
+
+```
+go run
+```
+
 ## Curl
 
 ```bash
