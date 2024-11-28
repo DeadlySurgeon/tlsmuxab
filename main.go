@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -147,88 +146,11 @@ func readClientHelloHeader(conn net.Conn) ([]byte, error) {
 	return clientHello, nil
 }
 
-type boundRecorder struct {
-	reader io.Reader
-	buffer bytes.Buffer
-}
-
-// Read reads data from the wrapped io.Reader, saves it to the buffer, and returns the data.
-func (br *boundRecorder) Read(p []byte) (int, error) {
-	n, err := br.reader.Read(p)
-	if n > 0 {
-		// Write the read bytes into the buffer
-		br.buffer.Write(p[:n])
-	}
-	return n, err
-}
-
-// Buffer returns a copy of the buffer for later use.
-func (br *boundRecorder) Buffer() []byte {
-	return br.buffer.Bytes()
-}
-
-func readTLSHello(conn net.Conn) (any, []byte) {
-	r := &boundRecorder{reader: conn}
-
-	recordType := make([]byte, 1)
-	i, err := r.Read(recordType)
-	expect("failed to read record: %v", nil, err)
-	expect("record type read bytes. E: %d G: %d", 1, i)
-	expect("Not a handshake Message", 0x16, recordType[0])
-
-	version := make([]byte, 2)
-	i, err = r.Read(version)
-	expect("failed to read record: %v", nil, err)
-	expect("version bytes. E: %d G: %d", 2, i)
-	if !isSupportedTLSVersion(version) {
-		expect("unsupported version: %v", nil, fmt.Errorf("%x", version))
-	}
-
-	length := make([]byte, 2)
-	i, err = r.Read(length)
-	expect("failed to read length: %v", nil, err)
-	expect("length bytes. E: %d G: %d", 2, i)
-
-	recordLength := binary.BigEndian.Uint16(length)
-	if recordLength > 16384 { // TLS maximum record size
-		expect("%v", nil, errors.New("Record length exceeds maximum allowed size"))
-	}
-
-	clientHello := make([]byte, recordLength)
-	i, err = io.ReadFull(r, clientHello)
-	expect("failed to read client hello: %v", nil, err)
-	expect("client hello length. E: %d G: %d", int(recordLength), i)
-
-	return clientHello, r.Buffer()
-}
-
-// formats text as fmt.Sprintf(text, expect, got)
-func expect[T comparable](text string, expect, got T) {
-	if expect == got {
-		return
-	}
-
-	if _, ok := interface{}(got).(error); ok {
-		panic(fmt.Sprintf(text, got))
-	}
-
-	if strings.Contains(text, "%") {
-		panic(fmt.Sprintf("Expected "+text, expect, got))
-	}
-
-	panic(text)
-}
-
 func sigWait() {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
 	<-c
 	signal.Stop(c)
-}
-
-// isSupportedTLSVersion checks if the given version is among the supported TLS versions
-func isSupportedTLSVersion(version []byte) bool {
-	return version[0] == 0x03 && (version[1] == 0x01 || version[1] == 0x03 || version[1] == 0x04)
 }
 
 // Is this ~stolen~ borrowed from crypto/tls? Maybe. Does it work? Yes.
