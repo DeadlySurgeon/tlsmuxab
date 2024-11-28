@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"concepts/tlsmuxab/services"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -11,6 +10,8 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+
+	"github.com/deadlysurgeon/tlsmuxab/services"
 
 	"golang.org/x/crypto/cryptobyte"
 )

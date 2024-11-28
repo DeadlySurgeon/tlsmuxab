@@ -1,7 +1,6 @@
 package main
 
 import (
-	"concepts/tlsmuxab/services"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -13,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/deadlysurgeon/tlsmuxab/services"
 
 	"github.com/fsnotify/fsnotify"
 )

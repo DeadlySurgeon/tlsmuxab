@@ -1,4 +1,4 @@
-module concepts/tlsmuxab
+module github.com/deadlysurgeon/tlsmuxab
 
 go 1.23.3
 
