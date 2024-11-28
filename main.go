@@ -56,8 +56,12 @@ func handleConn(conn net.Conn) {
 	}()
 	defer func() { _ = conn.Close() }()
 
-	clientHello, bytes := readTLSHello(conn)
-	serverName, ok := parseClientHello(clientHello.([]byte))
+	bytes, err := readClientHelloHeader(conn)
+	if err != nil {
+		return
+	}
+
+	serverName, ok := parseClientHello(bytes)
 	if !ok {
 		return
 	}
@@ -98,6 +102,70 @@ func handleConn(conn net.Conn) {
 	_, _ = io.Copy(oConn, conn)                 // Server to client
 }
 
+var (
+	// Not a handshake is returned if it is determined that the payload read is
+	// not a TLS Handshake
+	errNotAHandshake = errors.New("not a handshake")
+
+	errHelloTooLarge = errors.New("client hello record to large")
+)
+
+// readClientHelloHeader returns the ClientHelloInfo message including the payload
+// wrapper (5 bytes).
+func readClientHelloHeader(conn net.Conn) ([]byte, error) {
+	// Bit of a moot point since we still have to manually manipulate slice data
+	// however it does at the very least remove magic numbers.
+	const payloadSize = 5
+
+	b := make([]byte, payloadSize)
+	_, err := io.ReadFull(conn, b)
+	if err != nil {
+		return nil, err
+	}
+
+	if b[0] != 0x16 {
+		return nil, errNotAHandshake
+	}
+
+	if b[1] != 0x03 || b[2] != 0x01 {
+		return nil, errors.New("Unsupported version")
+	}
+
+	length := binary.BigEndian.Uint16(b[3:5])
+	if length > 16384 {
+		return nil, errHelloTooLarge
+	}
+
+	clientHello := make([]byte, length+payloadSize)
+	copy(clientHello[:payloadSize], b)
+	_, err = io.ReadFull(conn, clientHello[payloadSize:])
+	if err != nil {
+		return nil, err
+	}
+
+	return clientHello, nil
+}
+
+type boundRecorder struct {
+	reader io.Reader
+	buffer bytes.Buffer
+}
+
+// Read reads data from the wrapped io.Reader, saves it to the buffer, and returns the data.
+func (br *boundRecorder) Read(p []byte) (int, error) {
+	n, err := br.reader.Read(p)
+	if n > 0 {
+		// Write the read bytes into the buffer
+		br.buffer.Write(p[:n])
+	}
+	return n, err
+}
+
+// Buffer returns a copy of the buffer for later use.
+func (br *boundRecorder) Buffer() []byte {
+	return br.buffer.Bytes()
+}
+
 func readTLSHello(conn net.Conn) (any, []byte) {
 	r := &boundRecorder{reader: conn}
 
@@ -131,26 +199,6 @@ func readTLSHello(conn net.Conn) (any, []byte) {
 	expect("client hello length. E: %d G: %d", int(recordLength), i)
 
 	return clientHello, r.Buffer()
-}
-
-type boundRecorder struct {
-	reader io.Reader
-	buffer bytes.Buffer
-}
-
-// Read reads data from the wrapped io.Reader, saves it to the buffer, and returns the data.
-func (br *boundRecorder) Read(p []byte) (int, error) {
-	n, err := br.reader.Read(p)
-	if n > 0 {
-		// Write the read bytes into the buffer
-		br.buffer.Write(p[:n])
-	}
-	return n, err
-}
-
-// Buffer returns a copy of the buffer for later use.
-func (br *boundRecorder) Buffer() []byte {
-	return br.buffer.Bytes()
 }
 
 // formats text as fmt.Sprintf(text, expect, got)
@@ -189,7 +237,7 @@ func parseClientHello(b []byte) (string, bool) {
 	var ver uint16
 	var random []byte
 	var sessionID []byte
-	if !s.Skip(4) || !s.ReadUint16(&ver) ||
+	if !s.Skip(5) || !s.Skip(4) || !s.ReadUint16(&ver) ||
 		!s.ReadBytes(&random, 32) ||
 		!readUint8LengthPrefixed(&s, &sessionID) {
 		return "", false
