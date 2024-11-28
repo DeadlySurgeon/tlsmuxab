@@ -1,0 +1,4 @@
+certs
+.vscode
+*.bin
+__debug*
