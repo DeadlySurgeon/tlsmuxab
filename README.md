@@ -6,8 +6,8 @@ Cert Experiment
 
 From base directory:
 
-```
-go run
+```bash
+go run tools/certs/gen/main.go
 ```
 
 ## Curl
